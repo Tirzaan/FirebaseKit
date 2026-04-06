@@ -65,3 +65,23 @@ public final class StorageService {
         try await ref.delete()
     }
 }
+
+// Usage Example
+/*
+ let storage = StorageService()
+
+ // Upload a profile picture
+ let imageData: Data = ... // e.g. from UIImage
+ let url = try await storage.upload(
+     data: imageData,
+     path: "avatars/\(userID).jpg",
+     mimeType: "image/jpeg"
+ )
+
+ // Download an image
+ let data = try await storage.download(path: "avatars/\(userID).jpg")
+ let image = UIImage(data: data)
+
+ // Delete a file
+ try await storage.delete(path: "avatars/\(userID).jpg")
+ */
