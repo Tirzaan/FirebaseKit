@@ -65,6 +65,17 @@ public final class FirestoreService {
         try await database.collection(collection).document(documentID).delete()
     }
     
+    /// Delete a field in a document
+    public func deleteField(
+        collection: String,
+        documentID: String,
+        field: String
+    ) async throws {
+        try await database.collection(collection).document(documentID).updateData([
+            field: FieldValue.delete()
+        ])
+    }
+    
     /// Listen to a collection in real time
     public func listen<T: Decodable>(
         collection: String,
