@@ -31,6 +31,14 @@ public final class FirestoreService {
         return try snapshot.data(as: T.self)
     }
     
+    public func fetchRaw(
+        collection: String,
+        documentID: String
+    ) async throws -> [String: Any] {
+        let snapshot = try await database.collection(collection).document(documentID).getDocument()
+        return snapshot.data() ?? [:]
+    }
+    
     /// Save a Codable document
     public func save<T: Encodable & Identifiable>(
         _ object: T,
