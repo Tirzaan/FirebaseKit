@@ -15,12 +15,12 @@ public final class FirebaseManager {
     public static let shared = FirebaseManager()
     
     public let auth: Auth
-    public let db: Firestore
+    public let database: Firestore
     
     private init() {
         // FirebaseApp.configure() must be called before this
         self.auth = Auth.auth()
-        self.db = Firestore.firestore()
+        self.database = Firestore.firestore()
     }
     
     // MARK: - Configure

@@ -11,9 +11,19 @@ import Foundation
 
 public final class StorageService {
     
-    private let storage = Storage.storage()
+    public static let shared = StorageService()  // singleton style
     
-    public init() {}
+    private let storage: Storage
+    
+    // private init for singleton
+    private init() {
+        self.storage = Storage.storage()
+    }
+    
+    // public init for custom instance style
+    public init(storage: Storage = Storage.storage()) {
+        self.storage = storage
+    }
     
     // MARK: - Upload
     
