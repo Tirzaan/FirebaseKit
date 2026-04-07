@@ -54,6 +54,13 @@ public final class AuthService {
         try await user.sendEmailVerification(beforeUpdatingEmail: newEmail)
     }
     
+    public func updateDisplayName(_ name: String) async throws {
+        guard let user = currentUser else { throw AuthError.notSignedIn }
+        let changeRequest = user.createProfileChangeRequest()
+        changeRequest.displayName = name
+        try await changeRequest.commitChanges()
+    }
+    
     // MARK: - Email Verification
     public func sendEmailVerification() async throws {
         guard let user = currentUser else { throw AuthError.notSignedIn }
