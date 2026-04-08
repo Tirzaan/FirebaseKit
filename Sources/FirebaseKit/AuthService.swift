@@ -61,6 +61,13 @@ public final class AuthService {
         try await changeRequest.commitChanges()
     }
     
+    public func updatePhotoURL(_ url: URL) async throws {
+        guard let user = currentUser else { throw AuthError.notSignedIn }
+        let changeRequest = user.createProfileChangeRequest()
+        changeRequest.photoURL = url
+        try await changeRequest.commitChanges()
+    }
+    
     // MARK: - Email Verification
     public func sendEmailVerification() async throws {
         guard let user = currentUser else { throw AuthError.notSignedIn }

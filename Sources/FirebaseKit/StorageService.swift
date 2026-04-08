@@ -42,6 +42,41 @@ public final class StorageService {
         return url
     }
     
+    public func uploadWithProgress(
+        data: Data,
+        path: String,
+        mimeType: String = "image/jpeg",
+        onProgress: @escaping (Double) -> Void
+    ) async throws -> URL {
+        let ref = storage.reference().child(path)
+        let metadata = StorageMetadata()
+        metadata.contentType = mimeType
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let task = ref.putData(data, metadata: metadata)
+            
+            task.observe(.progress) { snapshot in
+                let progress = Double(snapshot.progress?.completedUnitCount ?? 0) /
+                               Double(snapshot.progress?.totalUnitCount ?? 1)
+                onProgress(progress)
+            }
+            
+            task.observe(.success) { _ in
+                ref.downloadURL { url, error in
+                    if let url = url {
+                        continuation.resume(returning: url)
+                    } else {
+                        continuation.resume(throwing: error ?? URLError(.badServerResponse))
+                    }
+                }
+            }
+            
+            task.observe(.failure) { snapshot in
+                continuation.resume(throwing: snapshot.error ?? URLError(.badServerResponse))
+            }
+        }
+    }
+    
     /// Upload a local file by URL and return the download URL
     public func uploadFile(
         localURL: URL,
@@ -51,6 +86,12 @@ public final class StorageService {
         _ = try await ref.putFileAsync(from: localURL)
         let url = try await ref.downloadURL()
         return url
+    }
+    
+    public func listFiles(path: String) async throws -> [StorageReference] {
+        let ref = storage.reference().child(path)
+        let result = try await ref.listAll()
+        return result.items
     }
     
     // MARK: - Download

@@ -106,6 +106,14 @@ public final class FirestoreService {
         ])
     }
     
+    public func updateFields(
+        collection: String,
+        documentID: String,
+        fields: [String: Any]
+    ) async throws {
+        try await database.collection(collection).document(documentID).updateData(fields)
+    }
+    
     /// Listen to a collection in real time
     public func listen<T: Decodable>(
         collection: String,
@@ -116,5 +124,55 @@ public final class FirestoreService {
             let items = docs.compactMap { try? $0.data(as: T.self) }
             onChange(items)
         }
+    }
+    
+    public func listenToDocument<T: Decodable>(
+        collection: String,
+        documentID: String,
+        as type: T.Type,
+        onChange: @escaping (T?) -> Void
+    ) -> ListenerRegistration {
+        database.collection(collection).document(documentID).addSnapshotListener { snapshot, _ in
+            guard let snapshot = snapshot else { onChange(nil); return }
+            onChange(try? snapshot.data(as: T.self))
+        }
+    }
+    
+    public func query<T: Decodable>(
+        collection: String,
+        field: String,
+        isEqualTo value: Any,
+        as type: T.Type
+    ) async throws -> [T] {
+        let snapshot = try await database.collection(collection)
+            .whereField(field, isEqualTo: value)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: T.self) }
+    }
+
+    // More query options
+    public func queryWhere<T: Decodable>(
+        collection: String,
+        field: String,
+        in values: [Any],
+        as type: T.Type
+    ) async throws -> [T] {
+        let snapshot = try await database.collection(collection)
+            .whereField(field, in: values)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: T.self) }
+    }
+
+    public func queryOrdered<T: Decodable>(
+        collection: String,
+        orderBy field: String,
+        descending: Bool = false,
+        limit: Int? = nil,
+        as type: T.Type
+    ) async throws -> [T] {
+        var query: Query = database.collection(collection).order(by: field, descending: descending)
+        if let limit = limit { query = query.limit(to: limit) }
+        let snapshot = try await query.getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: T.self) }
     }
 }
