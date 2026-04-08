@@ -39,6 +39,15 @@ public final class FirestoreService {
         return snapshot.data() ?? [:]
     }
     
+    /// Fetch all Codable documents in a collection
+    public func fetchAll<T: Decodable>(
+        collection: String,
+        as type: T.Type
+    ) async throws -> [T] {
+        let snapshot = try await database.collection(collection).getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: T.self) }
+    }
+    
     public func fetchField<T>(
         collection: String,
         documentID: String,
@@ -47,6 +56,27 @@ public final class FirestoreService {
     ) async throws -> T? {
         let data = try await fetchRaw(collection: collection, documentID: documentID)
         return data[field] as? T
+    }
+    
+    /// Fetch all documents in a subcollection
+    public func fetchSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        as type: T.Type
+    ) async throws -> [T] {
+        let snapshot = try await database.collection(collection).document(documentID).collection(subcollection).getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: T.self) }
+    }
+
+    /// Save a document to a subcollection
+    public func saveToSubcollection<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String
+    ) async throws where T.ID == String {
+        try database.collection(collection).document(documentID).collection(subcollection).document(object.id).setData(from: object)
     }
     
     /// Save a Codable document
