@@ -41,6 +41,9 @@ struct MyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onOpenURL { url in
+                    GoogleSignInService.shared.handle(url)
+                }
         }
     }
 }
@@ -60,7 +63,7 @@ struct ContentView: View {
         if isSignedIn {
             HomeView()
         } else {
-            SignUpView()
+            SignInView()
         }
         .onAppear {
             _ = AuthService.shared.addAuthStateListener { user in
@@ -69,6 +72,56 @@ struct ContentView: View {
         }
     }
 }
+```
+
+---
+
+## Package.swift
+
+Your `Package.swift` should look like this:
+
+```swift
+// swift-tools-version: 5.9
+import PackageDescription
+
+let package = Package(
+    name: "FirebaseKit",
+    platforms: [
+        .iOS(.v16),
+        .macOS(.v13)
+    ],
+    products: [
+        .library(
+            name: "FirebaseKit",
+            targets: ["FirebaseKit"]
+        ),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/firebase/firebase-ios-sdk.git",
+            from: "11.0.0"
+        ),
+        .package(
+            url: "https://github.com/google/GoogleSignIn-iOS",
+            from: "8.0.0"
+        )
+    ],
+    targets: [
+        .target(
+            name: "FirebaseKit",
+            dependencies: [
+                .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseFirestore", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseStorage", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseAnalytics", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseMessaging", package: "firebase-ios-sdk"),
+                .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk"),
+                .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
+            ]
+        )
+    ]
+)
 ```
 
 ---
@@ -85,6 +138,7 @@ StorageService.shared
 AnalyticsService.shared
 FCMService.shared
 CrashlyticsService.shared
+GoogleSignInService.shared
 
 // Custom instance (useful for testing)
 let auth = AuthService(auth: mockAuth)
@@ -142,26 +196,42 @@ try await AuthService.shared.updateDisplayName("John")
 try await AuthService.shared.updatePhotoURL(url)
 ```
 
-### Google Sign-In
-
-Requires the GoogleSignIn SDK in your app to obtain the tokens.
-
-```swift
-_ = try await AuthService.shared.signInWithGoogle(
-    idToken: idToken,
-    accessToken: accessToken
-)
-```
-
 ### Apple Sign-In
 
-Requires `AuthenticationServices` in your app to obtain the token and nonce.
+Requires **Sign in with Apple** capability added to your app target.
 
 ```swift
-_ = try await AuthService.shared.signInWithApple(
-    idToken: idToken,
-    nonce: nonce
-)
+import AuthenticationServices
+import FirebaseKit
+
+SignInWithAppleButton(.signIn) { request in
+    request.requestedScopes = [.fullName, .email]
+    request.nonce = AppleSignInHelper.randomNonceString()
+} onCompletion: { result in
+    if case .success(let auth) = result {
+        AppleSignInHelper.handle(auth) { result in
+            if case .failure(let error) = result {
+                print(error.localizedDescription)
+            }
+        }
+    }
+}
+```
+
+### Google Sign-In
+
+Requires a `REVERSED_CLIENT_ID` URL Scheme added to your app target under **Info → URL Types**.
+
+```swift
+GoogleSignInService.shared.signIn(from: rootVC) { result in
+    if case .failure(let error) = result {
+        print(error.localizedDescription)
+    }
+}
+
+// Get rootVC
+guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+      let rootVC = scene.windows.first?.rootViewController else { return }
 ```
 
 ### Phone Number
@@ -524,8 +594,19 @@ func signUp() async {
 3. Click **Add App → iOS** and enter your Bundle ID
 4. Download `GoogleService-Info.plist` and add it to your app target
 5. Enable auth providers under **Authentication → Sign-in method**
+    - Email/Password
+    - Google
+    - Apple
+    - Phone (if needed)
 6. Enable Crashlytics under **Crashlytics** in the console
 7. Enable Cloud Messaging under **Cloud Messaging** in the console
+
+## Xcode Setup for Sign-In Providers
+
+| Provider | Xcode Setup |
+|---|---|
+| Apple | Target → Signing & Capabilities → + Capability → Sign in with Apple |
+| Google | Target → Info → URL Types → + → set URL Schemes to `REVERSED_CLIENT_ID` from `GoogleService-Info.plist` |
 
 ---
 
