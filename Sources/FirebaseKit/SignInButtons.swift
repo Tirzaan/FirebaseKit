@@ -12,7 +12,7 @@ import AuthenticationServices
 import GoogleSignIn
 import FirebaseAuth
 
-public struct AppleSignInButton<T>: View {
+public struct AppleSignInButton: View {
     
     var onSuccess: ((User) -> Void)?
     var onFailure: ((Error) -> Void)?
