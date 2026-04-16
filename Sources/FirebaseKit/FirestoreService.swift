@@ -42,9 +42,10 @@ public final class FirestoreService {
     /// Fetch all Codable documents in a collection
     public func fetchAll<T: Decodable>(
         collection: String,
+        limit: Int,
         as type: T.Type
     ) async throws -> [T] {
-        let snapshot = try await database.collection(collection).getDocuments()
+        let snapshot = try await database.collection(collection).limit(to: limit).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: T.self) }
     }
     
