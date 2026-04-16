@@ -42,6 +42,14 @@ public final class FirestoreService {
     /// Fetch all Codable documents in a collection
     public func fetchAll<T: Decodable>(
         collection: String,
+        as type: T.Type
+    ) async throws -> [T] {
+        let snapshot = try await database.collection(collection).getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: T.self) }
+    }
+    
+    public func fetchAll<T: Decodable>(
+        collection: String,
         limit: Int,
         as type: T.Type
     ) async throws -> [T] {
@@ -136,6 +144,25 @@ public final class FirestoreService {
         database.collection(collection).document(documentID).addSnapshotListener { snapshot, _ in
             guard let snapshot = snapshot else { onChange(nil); return }
             onChange(try? snapshot.data(as: T.self))
+        }
+    }
+    
+    public func listenToSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        orderBy field: String,
+        descending: Bool = false,
+        limit: Int? = nil,
+        as type: T.Type,
+        onChange: @escaping ([T]) -> Void
+    ) -> ListenerRegistration {
+        var query: Query = database.collection(collection).document(documentID).collection(subcollection).order(by: field, descending: descending)
+        if let limit = limit { query = query.limit(to: limit) }
+        return query.addSnapshotListener { snapshot, _ in
+            guard let docs = snapshot?.documents else { return }
+            let items = docs.compactMap { try? $0.data(as: T.self) }
+            onChange(items)
         }
     }
     
