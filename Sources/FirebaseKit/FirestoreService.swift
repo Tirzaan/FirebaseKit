@@ -77,6 +77,28 @@ public final class FirestoreService {
         let snapshot = try await database.collection(collection).document(documentID).collection(subcollection).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: T.self) }
     }
+    
+    public func fetchPaginated<T: Decodable>(
+        collection: String,
+        orderBy field: String,
+        descending: Bool = false,
+        limit: Int = 20,
+        after lastDocument: DocumentSnapshot? = nil,
+        as type: T.Type
+    ) async throws -> (items: [T], lastDocument: DocumentSnapshot?) {
+        var query = database.collection(collection)
+            .order(by: field, descending: descending)
+            .limit(to: limit)
+        
+        if let lastDocument = lastDocument {
+            query = query.start(afterDocument: lastDocument)
+        }
+        
+        let snapshot = try await query.getDocuments()
+        let items = snapshot.documents.compactMap { try? $0.data(as: T.self) }
+        let lastDoc = snapshot.documents.last
+        return (items, lastDoc)
+    }
 
     /// Save a document to a subcollection
     public func saveToSubcollection<T: Encodable & Identifiable>(
