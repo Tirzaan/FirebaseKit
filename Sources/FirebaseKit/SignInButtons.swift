@@ -14,19 +14,25 @@ import FirebaseAuth
 
 public struct AppleSignInButton: View {
     
+    var label: SignInWithAppleButton.Label
+    var style: SignInWithAppleButton.Style
     var onSuccess: ((User) -> Void)?
     var onFailure: ((Error) -> Void)?
     
     public init(
+        label: SignInWithAppleButton.Label,
+        style: SignInWithAppleButton.Style,
         onSuccess: ((User) -> Void)? = nil,
         onFailure: ((Error) -> Void)? = nil
     ) {
+        self.label = label
+        self.style = style
         self.onSuccess = onSuccess
         self.onFailure = onFailure
     }
     
     public var body: some View {
-        SignInWithAppleButton(.signIn) { request in
+        SignInWithAppleButton(label) { request in
             request.requestedScopes = [.fullName, .email]
             request.nonce = AppleSignInHelper.randomNonceString()
         } onCompletion: { result in
@@ -41,19 +47,35 @@ public struct AppleSignInButton: View {
                 onFailure?(error)
             }
         }
+        .signInWithAppleButtonStyle(style)
         .frame(height: 50)
     }
 }
 
+public enum GoogleSignInLabel: String {
+    case signIn = "Sign in with Google"
+    case signUp = "Sign up with Google"
+    case `continue` = "Continue with Google"
+}
+
 public struct GoogleSignInButton: View {
     
+    var label: GoogleSignInLabel
+    var foregroundColor: Color
+    var backgroundColor: Color
     var onSuccess: ((User) -> Void)?
     var onFailure: ((Error) -> Void)?
     
     public init(
+        label: GoogleSignInLabel,
+        foregroundColor: Color = .white,
+        backgroundColor: Color = .black,
         onSuccess: ((User) -> Void)? = nil,
         onFailure: ((Error) -> Void)? = nil
     ) {
+        self.label = label
+        self.foregroundColor = foregroundColor
+        self.backgroundColor = backgroundColor
         self.onSuccess = onSuccess
         self.onFailure = onFailure
     }
@@ -70,12 +92,12 @@ public struct GoogleSignInButton: View {
                 }
             }
         } label: {
-            Text("Sign in with Google")
+            Text(label.rawValue)
                 .font(.system(size: 16, weight: .medium))
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
-                .background(Color.white)
-                .foregroundStyle(.black)
+                .background(backgroundColor)
+                .foregroundStyle(foregroundColor)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
         }
