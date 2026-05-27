@@ -13,15 +13,14 @@ import GoogleSignIn
 import FirebaseAuth
 
 public struct AppleSignInButton: View {
-    
     var label: SignInWithAppleButton.Label
-    var style: SignInWithAppleButton.Style
+    var style: SignInWithAppleButtonStyle
     var onSuccess: ((User) -> Void)?
     var onFailure: ((Error) -> Void)?
     
     public init(
         label: SignInWithAppleButton.Label,
-        style: SignInWithAppleButton.Style,
+        style: SignInWithAppleButtonStyle,
         onSuccess: ((User) -> Void)? = nil,
         onFailure: ((Error) -> Void)? = nil
     ) {
@@ -29,6 +28,32 @@ public struct AppleSignInButton: View {
         self.style = style
         self.onSuccess = onSuccess
         self.onFailure = onFailure
+    }
+    
+    @Environment(\.colorScheme) private var colorScheme  // ← add this
+    
+    private var adaptiveStyle: SignInWithAppleButton.Style {
+        colorScheme == .dark ? .white : .black
+    }
+    
+    public enum SignInWithAppleButtonStyle {
+        case white
+        case black
+        case whiteOutline
+        case adaptive
+    }
+    
+    private var appleStyle: SignInWithAppleButton.Style {
+        switch style {
+        case .white:
+            return .white
+        case .black:
+            return .black
+        case .whiteOutline:
+            return .whiteOutline
+        case .adaptive:
+            return adaptiveStyle
+        }
     }
     
     public var body: some View {
@@ -47,7 +72,7 @@ public struct AppleSignInButton: View {
                 onFailure?(error)
             }
         }
-        .signInWithAppleButtonStyle(style)
+        .signInWithAppleButtonStyle(appleStyle)
         .frame(height: 50)
     }
 }
@@ -93,19 +118,27 @@ public struct GoogleSignInButton: View {
             }
         } label: {
             Text(label.rawValue)
-                .font(.system(size: 16, weight: .medium))
+                .font(.title3)
+                .fontWeight(.medium)
                 .frame(maxWidth: .infinity)
                 .frame(height: 50)
                 .background(backgroundColor)
                 .foregroundStyle(foregroundColor)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+                .overlay {
+                    Image("GoogleIcon", bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .padding(.leading, 75)
+                }
         }
         .buttonStyle(PressableButtonStyle())
     }
 }
 
-@available(iOS 13.0.0, *)
 struct PressableButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

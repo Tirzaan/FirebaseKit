@@ -35,6 +35,9 @@ let package = Package(
                 .product(name: "FirebaseMessaging", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk"),
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
+            ],
+            resources: [
+                .process("Resources")
             ]
         )
     ]
