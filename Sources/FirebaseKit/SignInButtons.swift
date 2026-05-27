@@ -117,23 +117,23 @@ public struct GoogleSignInButton: View {
                 }
             }
         } label: {
-            Text(label.rawValue)
-                .font(.title3)
-                .fontWeight(.medium)
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
-                .background(backgroundColor)
-                .foregroundStyle(foregroundColor)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
-                .overlay {
-                    Image("GoogleIcon", bundle: .module)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .padding(.leading, 75)
-                }
+            HStack {
+                Image("GoogleIcon", bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .padding(.leading, 75)
+                Text(label.rawValue)
+                    .font(.title3)
+                    .fontWeight(.medium)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(backgroundColor)
+                    .foregroundStyle(foregroundColor)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+            }
         }
         .buttonStyle(PressableButtonStyle())
     }
