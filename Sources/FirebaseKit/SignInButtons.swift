@@ -27,7 +27,7 @@ public struct AppleSignInButton: View {
     
     @Environment(\.colorScheme) private var colorScheme
     
-    private var appleStyle: SignInWithAppleButton.Style {
+    public var appleStyle: SignInWithAppleButton.Style {
         switch style {
         case .white: return .white
         case .black: return .black
