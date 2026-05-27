@@ -12,68 +12,54 @@ import AuthenticationServices
 import GoogleSignIn
 import FirebaseAuth
 
+public enum SignInWithAppleButtonStyle {
+    case white
+    case black
+    case whiteOutline
+    case adaptive
+}
+
 public struct AppleSignInButton: View {
     var label: SignInWithAppleButton.Label
     var style: SignInWithAppleButtonStyle
     var onSuccess: ((User) -> Void)?
     var onFailure: ((Error) -> Void)?
     
-    public init(
-        label: SignInWithAppleButton.Label,
-        style: SignInWithAppleButtonStyle,
-        onSuccess: ((User) -> Void)? = nil,
-        onFailure: ((Error) -> Void)? = nil
-    ) {
-        self.label = label
-        self.style = style
-        self.onSuccess = onSuccess
-        self.onFailure = onFailure
-    }
-    
-    @Environment(\.colorScheme) private var colorScheme  // ← add this
-    
-    private var adaptiveStyle: SignInWithAppleButton.Style {
-        colorScheme == .dark ? .white : .black
-    }
-    
-    public enum SignInWithAppleButtonStyle {
-        case white
-        case black
-        case whiteOutline
-        case adaptive
-    }
+    @Environment(\.colorScheme) private var colorScheme
     
     private var appleStyle: SignInWithAppleButton.Style {
         switch style {
-        case .white:
-            return .white
-        case .black:
-            return .black
-        case .whiteOutline:
-            return .whiteOutline
-        case .adaptive:
-            return adaptiveStyle
+        case .white: return .white
+        case .black: return .black
+        case .whiteOutline: return .whiteOutline
+        case .adaptive: return colorScheme == .dark ? .white : .black
         }
     }
     
     public var body: some View {
-        SignInWithAppleButton(label) { request in
-            request.requestedScopes = [.fullName, .email]
-            request.nonce = AppleSignInHelper.randomNonceString()
-        } onCompletion: { result in
-            if case .success(let auth) = result {
-                AppleSignInHelper.handle(auth) { result in
-                    switch result {
-                    case .success(let user): onSuccess?(user)
-                    case .failure(let error): onFailure?(error)
+        ZStack {
+            Color.clear
+                .frame(height: 50)
+            
+            SignInWithAppleButton(label) { request in
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = AppleSignInHelper.randomNonceString()
+            } onCompletion: { result in
+                if case .success(let auth) = result {
+                    AppleSignInHelper.handle(auth) { result in
+                        switch result {
+                        case .success(let user): onSuccess?(user)
+                        case .failure(let error): onFailure?(error)
+                        }
                     }
+                } else if case .failure(let error) = result {
+                    onFailure?(error)
                 }
-            } else if case .failure(let error) = result {
-                onFailure?(error)
             }
+            .signInWithAppleButtonStyle(appleStyle)
+            .frame(height: 50)
+            .id(colorScheme)
         }
-        .signInWithAppleButtonStyle(appleStyle)
-        .frame(height: 50)
     }
 }
 
