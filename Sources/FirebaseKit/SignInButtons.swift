@@ -25,6 +25,13 @@ public struct AppleSignInButton: View {
     var onSuccess: ((User) -> Void)?
     var onFailure: ((Error) -> Void)?
     
+    public init(label: SignInWithAppleButton.Label, style: SignInWithAppleButtonStyle, onSuccess: ((User) -> Void)? = nil, onFailure: ((Error) -> Void)? = nil) {
+        self.label = label
+        self.style = style
+        self.onSuccess = onSuccess
+        self.onFailure = onFailure
+    }
+    
     @Environment(\.colorScheme) private var colorScheme
     
     public var appleStyle: SignInWithAppleButton.Style {
