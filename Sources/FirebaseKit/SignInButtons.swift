@@ -34,7 +34,7 @@ public struct AppleSignInButton: View {
     
     @Environment(\.colorScheme) private var colorScheme
     
-    public var appleStyle: SignInWithAppleButton.Style {
+    var appleStyle: SignInWithAppleButton.Style {
         switch style {
         case .white: return .white
         case .black: return .black
@@ -120,13 +120,13 @@ public struct GoogleSignInButton: View {
                 Text(label.rawValue)
                     .font(.title3)
                     .fontWeight(.medium)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(backgroundColor)
-                    .foregroundStyle(foregroundColor)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .background(backgroundColor)
+            .foregroundStyle(foregroundColor)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
         }
         .buttonStyle(PressableButtonStyle())
     }
