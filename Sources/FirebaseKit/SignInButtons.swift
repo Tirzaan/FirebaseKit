@@ -114,7 +114,7 @@ public struct GoogleSignInButton: View {
                 Image("GoogleIcon", bundle: .module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .padding(.vertical, 14)
+                    .padding(.vertical)
                 Text(label.rawValue)
                     .font(.title3)
                     .fontWeight(.medium)
