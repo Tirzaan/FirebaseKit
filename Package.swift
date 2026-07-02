@@ -23,7 +23,8 @@ let package = Package(
             from: "8.0.0"
         ),
         .package(
-            path: "../SecureCodable"
+            url: "https://github.com/Tirzaan/SecureCodable.git",
+            from: "1.0.0"
         )
     ],
     targets: [
