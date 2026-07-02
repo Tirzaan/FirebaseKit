@@ -6,8 +6,10 @@
 //
 
 // Sources/FirebaseKit/StorageService.swift
+import CryptoKit
 import FirebaseStorage
 import Foundation
+import SecureCodable
 
 public final class StorageService {
     
@@ -87,6 +89,37 @@ public final class StorageService {
         let url = try await ref.downloadURL()
         return url
     }
+
+    /// Encrypt a Codable value and upload it as text.
+    public func uploadEncrypted<T: Encodable>(
+        _ value: T,
+        path: String,
+        using key: SymmetricKey
+    ) async throws -> URL {
+        let encryptedValue = try value.encrypted(using: key)
+        let data = Data(encryptedValue.utf8)
+
+        return try await upload(
+            data: data,
+            path: path,
+            mimeType: "text/plain"
+        )
+    }
+
+    /// Encrypt a Codable value with the current user's FirebaseKit-managed data key and upload it as text.
+    public func uploadEncrypted<T: Encodable>(
+        _ value: T,
+        path: String,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws -> URL {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        return try await uploadEncrypted(value, path: path, using: key)
+    }
     
     public func listFiles(path: String) async throws -> [StorageReference] {
         let ref = storage.reference().child(path)
@@ -100,6 +133,40 @@ public final class StorageService {
     public func download(path: String, maxSize: Int64 = 10 * 1024 * 1024) async throws -> Data {
         let ref = storage.reference().child(path)
         return try await ref.data(maxSize: maxSize)
+    }
+
+    /// Download encrypted text and decrypt it back into a Codable value.
+    public func downloadEncrypted<T: Decodable>(
+        path: String,
+        as type: T.Type,
+        using key: SymmetricKey,
+        maxSize: Int64 = 10 * 1024 * 1024
+    ) async throws -> T {
+        let data = try await download(path: path, maxSize: maxSize)
+        let encryptedValue = String(decoding: data, as: UTF8.self)
+
+        return try encryptedValue.decrypted(as: type, using: key)
+    }
+
+    /// Download encrypted text and decrypt it with the current user's FirebaseKit-managed data key.
+    public func downloadEncrypted<T: Decodable>(
+        path: String,
+        as type: T.Type,
+        passphrase: String,
+        userID: String? = nil,
+        maxSize: Int64 = 10 * 1024 * 1024
+    ) async throws -> T {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        return try await downloadEncrypted(
+            path: path,
+            as: type,
+            using: key,
+            maxSize: maxSize
+        )
     }
     
     /// Get a download URL for a given path

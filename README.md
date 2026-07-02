@@ -339,6 +339,48 @@ try await FirestoreService.shared.updateFields(
 )
 ```
 
+### Encrypted Save & Fetch
+
+```swift
+import FirebaseKit
+
+// FirebaseKit creates the user's data key automatically the first time.
+// It stores only the wrapped key in Firestore, not the raw key or passphrase.
+
+try await FirestoreService.shared.saveEncrypted(
+    user,
+    collection: "users",
+    passphrase: userEncryptionPassphrase
+)
+
+let decryptedUser = try await FirestoreService.shared.fetchEncrypted(
+    collection: "users",
+    documentID: user.id,
+    as: UserModel.self,
+    passphrase: userEncryptionPassphrase
+)
+```
+
+You can also save any Codable value with a specific document ID:
+
+```swift
+try await FirestoreService.shared.saveEncrypted(
+    settings,
+    collection: "user_settings",
+    documentID: userID,
+    passphrase: userEncryptionPassphrase
+)
+```
+
+If the user changes their encryption passphrase:
+
+```swift
+try await FirebaseEncryptionService.shared.rotatePassphrase(
+    oldPassphrase: oldPassphrase,
+    newPassphrase: newPassphrase
+)
+```
+
 ### Delete
 
 ```swift
@@ -474,6 +516,22 @@ let files = try await StorageService.shared.listFiles(path: "avatars/")
 
 // Delete a file
 try await StorageService.shared.delete(path: "avatars/\(userID).jpg")
+```
+
+### Encrypted Storage Upload & Download
+
+```swift
+let url = try await StorageService.shared.uploadEncrypted(
+    profile,
+    path: "private_profiles/\(userID).txt",
+    passphrase: userEncryptionPassphrase
+)
+
+let profile = try await StorageService.shared.downloadEncrypted(
+    path: "private_profiles/\(userID).txt",
+    as: UserModel.self,
+    passphrase: userEncryptionPassphrase
+)
 ```
 
 ### Recommended Path Structure

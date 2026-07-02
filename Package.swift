@@ -21,6 +21,9 @@ let package = Package(
         .package(
             url: "https://github.com/google/GoogleSignIn-iOS",
             from: "8.0.0"
+        ),
+        .package(
+            path: "../SecureCodable"
         )
     ],
     targets: [
@@ -35,6 +38,7 @@ let package = Package(
                 .product(name: "FirebaseMessaging", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseCrashlytics", package: "firebase-ios-sdk"),
                 .product(name: "GoogleSignIn", package: "GoogleSignIn-iOS"),
+                .product(name: "SecureCodable", package: "SecureCodable"),
             ],
             resources: [
                 .process("Resources")

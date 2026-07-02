@@ -6,7 +6,26 @@
 //
 
 // Sources/FirebaseKit/FirestoreService.swift
+import CryptoKit
 import FirebaseFirestore
+import Foundation
+import SecureCodable
+
+public struct EncryptedFirestoreDocument: Codable {
+    public let encryptedValue: String
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    public init(
+        encryptedValue: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.encryptedValue = encryptedValue
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
 
 public final class FirestoreService {
     
@@ -29,6 +48,42 @@ public final class FirestoreService {
     ) async throws -> T {
         let snapshot = try await database.collection(collection).document(documentID).getDocument()
         return try snapshot.data(as: T.self)
+    }
+
+    /// Fetch and decrypt a Codable document saved with saveEncrypted.
+    public func fetchEncrypted<T: Decodable>(
+        collection: String,
+        documentID: String,
+        as type: T.Type,
+        using key: SymmetricKey
+    ) async throws -> T {
+        let encryptedDocument: EncryptedFirestoreDocument = try await fetch(
+            collection: collection,
+            documentID: documentID
+        )
+
+        return try encryptedDocument.encryptedValue.decrypted(as: type, using: key)
+    }
+
+    /// Fetch and decrypt a Codable document using the current user's FirebaseKit-managed data key.
+    public func fetchEncrypted<T: Decodable>(
+        collection: String,
+        documentID: String,
+        as type: T.Type,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws -> T {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        return try await fetchEncrypted(
+            collection: collection,
+            documentID: documentID,
+            as: type,
+            using: key
+        )
     }
     
     public func fetchRaw(
@@ -77,6 +132,48 @@ public final class FirestoreService {
         let snapshot = try await database.collection(collection).document(documentID).collection(subcollection).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: T.self) }
     }
+
+    /// Fetch and decrypt all documents in a subcollection saved with saveEncryptedToSubcollection.
+    public func fetchEncryptedSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        as type: T.Type,
+        using key: SymmetricKey
+    ) async throws -> [T] {
+        let snapshot = try await database.collection(collection).document(documentID).collection(subcollection).getDocuments()
+
+        return snapshot.documents.compactMap { document in
+            guard let encryptedValue = document.data()["encryptedValue"] as? String else {
+                return nil
+            }
+
+            return try? encryptedValue.decrypted(as: type, using: key)
+        }
+    }
+
+    /// Fetch and decrypt all documents in a subcollection using the current user's FirebaseKit-managed data key.
+    public func fetchEncryptedSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        as type: T.Type,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws -> [T] {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        return try await fetchEncryptedSubcollection(
+            collection: collection,
+            documentID: documentID,
+            subcollection: subcollection,
+            as: type,
+            using: key
+        )
+    }
     
     public func fetchPaginated<T: Decodable>(
         collection: String,
@@ -109,6 +206,47 @@ public final class FirestoreService {
     ) async throws where T.ID == String {
         try database.collection(collection).document(documentID).collection(subcollection).document(object.id).setData(from: object)
     }
+
+    /// Encrypt and save a Codable document to a subcollection.
+    public func saveEncryptedToSubcollection<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        using key: SymmetricKey
+    ) async throws where T.ID == String {
+        let encryptedValue = try object.encrypted(using: key)
+        let encryptedDocument = EncryptedFirestoreDocument(encryptedValue: encryptedValue)
+
+        try database.collection(collection)
+            .document(documentID)
+            .collection(subcollection)
+            .document(object.id)
+            .setData(from: encryptedDocument)
+    }
+
+    /// Encrypt and save a Codable document to a subcollection using the current user's FirebaseKit-managed data key.
+    public func saveEncryptedToSubcollection<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws where T.ID == String {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncryptedToSubcollection(
+            object,
+            collection: collection,
+            documentID: documentID,
+            subcollection: subcollection,
+            using: key
+        )
+    }
     
     /// Save a Codable document
     public func save<T: Encodable & Identifiable>(
@@ -116,6 +254,75 @@ public final class FirestoreService {
         collection: String
     ) async throws where T.ID == String {
         try database.collection(collection).document(object.id).setData(from: object)
+    }
+
+    /// Encrypt and save a Codable document using its String id.
+    public func saveEncrypted<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        using key: SymmetricKey
+    ) async throws where T.ID == String {
+        try await saveEncrypted(
+            object,
+            collection: collection,
+            documentID: object.id,
+            using: key
+        )
+    }
+
+    /// Encrypt and save a Codable document using its String id and the current user's FirebaseKit-managed data key.
+    public func saveEncrypted<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws where T.ID == String {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncrypted(
+            object,
+            collection: collection,
+            using: key
+        )
+    }
+
+    /// Encrypt and save any Codable value to a specific document id.
+    public func saveEncrypted<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        using key: SymmetricKey
+    ) async throws {
+        let encryptedValue = try object.encrypted(using: key)
+        let encryptedDocument = EncryptedFirestoreDocument(encryptedValue: encryptedValue)
+
+        try database.collection(collection)
+            .document(documentID)
+            .setData(from: encryptedDocument)
+    }
+
+    /// Encrypt and save any Codable value to a specific document id using the current user's FirebaseKit-managed data key.
+    public func saveEncrypted<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncrypted(
+            object,
+            collection: collection,
+            documentID: documentID,
+            using: key
+        )
     }
     
     /// Delete a document
