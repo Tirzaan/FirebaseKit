@@ -103,6 +103,22 @@ public final class FirestoreService {
         return snapshot.documents.compactMap { try? $0.data(as: T.self) }
     }
     
+    /// Fetch and decrypt all Codable documents in a collection saved with saveEncrypted.
+    public func fetchAllEncrypted<T: Decodable>(
+        collection: String,
+        as type: T.Type,
+        using key: SymmetricKey
+    ) async throws -> [T] {
+        let encryptedDocuments: [EncryptedFirestoreDocument] = try await fetchAll(collection: collection, as: EncryptedFirestoreDocument.self)
+        var decryptedDocuments: [T] = []
+        
+        for encryptedDocument in encryptedDocuments {
+            decryptedDocuments.append(try encryptedDocument.encryptedValue.decrypted(as: type, using: key))
+        }
+        
+        return decryptedDocuments
+    }
+    
     public func fetchAll<T: Decodable>(
         collection: String,
         limit: Int,
@@ -110,6 +126,23 @@ public final class FirestoreService {
     ) async throws -> [T] {
         let snapshot = try await database.collection(collection).limit(to: limit).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: T.self) }
+    }
+    
+    /// Fetch and decrypt all Codable documents in a collection saved with saveEncrypted.
+    public func fetchAllEncrypted<T: Decodable>(
+        collection: String,
+        limit: Int,
+        as type: T.Type,
+        using key: SymmetricKey
+    ) async throws -> [T] {
+        let encryptedDocuments: [EncryptedFirestoreDocument] = try await fetchAll(collection: collection, limit: limit, as: EncryptedFirestoreDocument.self)
+        var decryptedDocuments: [T] = []
+        
+        for encryptedDocument in encryptedDocuments {
+            decryptedDocuments.append(try encryptedDocument.encryptedValue.decrypted(as: type, using: key))
+        }
+        
+        return decryptedDocuments
     }
     
     public func fetchField<T>(
@@ -121,6 +154,30 @@ public final class FirestoreService {
         let data = try await fetchRaw(collection: collection, documentID: documentID)
         return data[field] as? T
     }
+    
+    /// Fetch and decrypt a Codable document saved with saveEncrypted.
+//    public func fetchEncryptedField<T: Decodable>(
+//        collection: String,
+//        documentID: String,
+//        field: String,
+//        as type: T.Type,
+//        using key: SymmetricKey
+//    ) async throws -> T? {
+//        guard let encryptedDocument = try await fetchField(
+//            collection: collection,
+//            documentID: documentID,
+//            field: field,
+//            as: EncryptedFirestoreDocument.self
+//        ) else {
+//            return nil
+//        }
+//
+//        do {
+//            return try encryptedDocument.encryptedValue.decrypted(as: type, using: key)
+//        } catch {
+//            return nil
+//        }
+//    }
     
     /// Fetch all documents in a subcollection
     public func fetchSubcollection<T: Decodable>(
@@ -391,6 +448,69 @@ public final class FirestoreService {
         return query.addSnapshotListener { snapshot, _ in
             guard let docs = snapshot?.documents else { return }
             let items = docs.compactMap { try? $0.data(as: T.self) }
+            onChange(items)
+        }
+    }
+    
+    /// Listen to a collection in real time, decrypting each document's field.
+    public func listenEncrypted<T: Decodable>(
+        collection: String,
+        as type: T.Type,
+        using key: SymmetricKey,
+        onChange: @escaping ([T]) -> Void
+    ) -> ListenerRegistration {
+        database.collection(collection).addSnapshotListener { snapshot, _ in
+            guard let docs = snapshot?.documents else { return }
+            let items: [T] = docs.compactMap { doc in
+                guard let encryptedDocument = try? doc.data(as: EncryptedFirestoreDocument.self) else {
+                    return nil
+                }
+                return try? encryptedDocument.encryptedValue.decrypted(as: type, using: key)
+            }
+            onChange(items)
+        }
+    }
+
+    /// Listen to a single document in real time, decrypting its field.
+//    public func listenToEncryptedDocument<T: Decodable>(
+//        collection: String,
+//        documentID: String,
+//        as type: T.Type,
+//        using key: SymmetricKey,
+//        onChange: @escaping (T?) -> Void
+//    ) -> ListenerRegistration {
+//        database.collection(collection).document(documentID).addSnapshotListener { snapshot, _ in
+//            guard let snapshot = snapshot,
+//                  let encryptedDocument = try? snapshot.data(as: EncryptedFirestoreDocument.self) else {
+//                onChange(nil)
+//                return
+//            }
+//            onChange(try? encryptedDocument.encryptedValue.decrypted(as: type, using: key))
+//        }
+//    }
+
+    /// Listen to a subcollection in real time, decrypting each document's field.
+    public func listenToEncryptedSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        orderBy field: String,
+        descending: Bool = false,
+        limit: Int? = nil,
+        as type: T.Type,
+        using key: SymmetricKey,
+        onChange: @escaping ([T]) -> Void
+    ) -> ListenerRegistration {
+        var query: Query = database.collection(collection).document(documentID).collection(subcollection).order(by: field, descending: descending)
+        if let limit = limit { query = query.limit(to: limit) }
+        return query.addSnapshotListener { snapshot, _ in
+            guard let docs = snapshot?.documents else { return }
+            let items: [T] = docs.compactMap { doc in
+                guard let encryptedDocument = try? doc.data(as: EncryptedFirestoreDocument.self) else {
+                    return nil
+                }
+                return try? encryptedDocument.encryptedValue.decrypted(as: type, using: key)
+            }
             onChange(items)
         }
     }
