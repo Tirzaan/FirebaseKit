@@ -894,3 +894,149 @@ public extension FirestoreService {
         )
     }
 }
+
+public extension FirestoreService {
+    /// Save a new document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws {
+        let fields = try encryptedFieldDictionary(from: object, using: key)
+
+        try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .setData(fields, merge: merge)
+    }
+
+    /// Save a new document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        passphrase: String,
+        userID: String? = nil,
+        merge: Bool = false
+    ) async throws {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncryptedFields(
+            object,
+            collection: collection,
+            documentID: documentID,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Save an Identifiable document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        try await saveEncryptedFields(
+            object,
+            collection: collection,
+            documentID: object.id,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Save an Identifiable document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        passphrase: String,
+        userID: String? = nil,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncryptedFields(
+            object,
+            collection: collection,
+            documentID: object.id,
+            using: key,
+            merge: merge
+        )
+    }
+
+    private func encryptedFieldDictionary<T: Encodable>(
+        from object: T,
+        using key: SymmetricKey
+    ) throws -> [String: Any] {
+        var fields: [String: Any] = [:]
+
+        for child in Mirror(reflecting: object).allStoredChildren {
+            guard let fieldName = child.label?.cleanPropertyName else {
+                continue
+            }
+
+            guard let encodableValue = child.value as? Encodable else {
+                throw EncryptedFieldsError.unsupportedField(fieldName)
+            }
+
+            fields[fieldName] = try SecureCodable.shared.encrypt(
+                AnyEncodable(encodableValue),
+                using: key
+            )
+        }
+
+        return fields
+    }
+}
+
+public enum EncryptedFieldsError: LocalizedError {
+    case unsupportedField(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedField(let field):
+            return "The field '\(field)' could not be encrypted because it does not conform to Encodable."
+        }
+    }
+}
+
+private struct AnyEncodable: Encodable {
+    private let value: Encodable
+
+    init(_ value: Encodable) {
+        self.value = value
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try value.encode(to: encoder)
+    }
+}
+
+private extension Mirror {
+    var allStoredChildren: [Mirror.Child] {
+        var children = Array(self.children)
+        var mirror = self
+
+        while let superclassMirror = mirror.superclassMirror {
+            children.append(contentsOf: superclassMirror.children)
+            mirror = superclassMirror
+        }
+
+        return children
+    }
+}
+
+private extension String {
+    var cleanPropertyName: String {
+        hasPrefix("_") ? String(dropFirst()) : self
+    }
+}
