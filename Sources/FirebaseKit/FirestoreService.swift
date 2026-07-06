@@ -895,6 +895,10 @@ public extension FirestoreService {
     }
 }
 
+
+
+
+
 public extension FirestoreService {
     /// Save a new document where every top-level stored property is encrypted separately.
     func saveEncryptedFields<T: Encodable>(
@@ -997,6 +1001,281 @@ public extension FirestoreService {
         return fields
     }
 }
+
+public extension FirestoreService {
+    /// Save a document with public fields and selected encrypted fields.
+    ///
+    /// Example:
+    /// try await FirestoreService.shared.savePartiallyEncrypted(
+    ///     chat,
+    ///     collection: "chats",
+    ///     documentID: chatID,
+    ///     encryptedFields: ["title", "lastMessage"],
+    ///     passphrase: userEncryptionPassphrase
+    /// )
+    func savePartiallyEncrypted<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws {
+        var data = try Firestore.Encoder().encode(object)
+
+        for field in encryptedFields {
+            guard let value = data[field] else {
+                continue
+            }
+
+            let encryptableValue = try FirestoreEncryptedJSONValue(firestoreValue: value)
+            data[field] = try encryptableValue.encrypted(using: key)
+        }
+
+        try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .setData(data, merge: merge)
+    }
+
+    /// Save a document with public fields and selected encrypted fields using FirebaseKit's managed data key.
+    func savePartiallyEncrypted<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        encryptedFields: Set<String>,
+        passphrase: String,
+        userID: String? = nil,
+        merge: Bool = false
+    ) async throws {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await savePartiallyEncrypted(
+            object,
+            collection: collection,
+            documentID: documentID,
+            encryptedFields: encryptedFields,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Save an Identifiable document with public fields and selected encrypted fields.
+    func savePartiallyEncrypted<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        try await savePartiallyEncrypted(
+            object,
+            collection: collection,
+            documentID: object.id,
+            encryptedFields: encryptedFields,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Save an Identifiable document with public fields and selected encrypted fields using FirebaseKit's managed data key.
+    func savePartiallyEncrypted<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        encryptedFields: Set<String>,
+        passphrase: String,
+        userID: String? = nil,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await savePartiallyEncrypted(
+            object,
+            collection: collection,
+            documentID: object.id,
+            encryptedFields: encryptedFields,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Fetch a document with public fields and selected encrypted fields.
+    ///
+    /// Example:
+    /// let chat = try await FirestoreService.shared.fetchPartiallyEncrypted(
+    ///     collection: "chats",
+    ///     documentID: chatID,
+    ///     as: ChatModel.self,
+    ///     encryptedFields: ["title", "lastMessage"],
+    ///     passphrase: userEncryptionPassphrase
+    /// )
+    func fetchPartiallyEncrypted<T: Decodable>(
+        collection: String,
+        documentID: String,
+        as type: T.Type,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey
+    ) async throws -> T {
+        var data = try await fetchRaw(
+            collection: collection,
+            documentID: documentID
+        )
+
+        for field in encryptedFields {
+            guard let encryptedValue = data[field] as? String else {
+                continue
+            }
+
+            let decryptedValue = try encryptedValue.decrypted(
+                as: FirestoreEncryptedJSONValue.self,
+                using: key
+            )
+
+            data[field] = decryptedValue.firestoreValue
+        }
+
+        return try Firestore.Decoder().decode(type, from: data)
+    }
+
+    /// Fetch a document with public fields and selected encrypted fields using FirebaseKit's managed data key.
+    func fetchPartiallyEncrypted<T: Decodable>(
+        collection: String,
+        documentID: String,
+        as type: T.Type,
+        encryptedFields: Set<String>,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws -> T {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        return try await fetchPartiallyEncrypted(
+            collection: collection,
+            documentID: documentID,
+            as: type,
+            encryptedFields: encryptedFields,
+            using: key
+        )
+    }
+}
+
+private enum FirestoreEncryptedJSONValue: Codable {
+    case string(String)
+    case int(Int)
+    case double(Double)
+    case bool(Bool)
+    case date(TimeInterval)
+    case array([FirestoreEncryptedJSONValue])
+    case object([String: FirestoreEncryptedJSONValue])
+    case null
+
+    init(firestoreValue: Any) throws {
+        switch firestoreValue {
+        case let value as String:
+            self = .string(value)
+        case let value as Int:
+            self = .int(value)
+        case let value as Double:
+            self = .double(value)
+        case let value as Float:
+            self = .double(Double(value))
+        case let value as Bool:
+            self = .bool(value)
+        case let value as Date:
+            self = .date(value.timeIntervalSince1970)
+        case let value as Timestamp:
+            self = .date(value.dateValue().timeIntervalSince1970)
+        case let value as [Any]:
+            self = .array(try value.map { try FirestoreEncryptedJSONValue(firestoreValue: $0) })
+        case let value as [String: Any]:
+            self = .object(try value.mapValues { try FirestoreEncryptedJSONValue(firestoreValue: $0) })
+        case _ as NSNull:
+            self = .null
+        default:
+            let data = try JSONSerialization.data(withJSONObject: firestoreValue, options: [])
+            self = try JSONDecoder().decode(FirestoreEncryptedJSONValue.self, from: data)
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Int.self) {
+            self = .int(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .double(value)
+        } else if let value = try? container.decode(DateValue.self) {
+            self = .date(value.timeIntervalSince1970)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([FirestoreEncryptedJSONValue].self) {
+            self = .array(value)
+        } else {
+            self = .object(try container.decode([String: FirestoreEncryptedJSONValue].self))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .int(let value):
+            try container.encode(value)
+        case .double(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .date(let value):
+            try container.encode(DateValue(timeIntervalSince1970: value))
+        case .array(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
+
+    var firestoreValue: Any {
+        switch self {
+        case .string(let value):
+            return value
+        case .int(let value):
+            return value
+        case .double(let value):
+            return value
+        case .bool(let value):
+            return value
+        case .date(let value):
+            return Date(timeIntervalSince1970: value)
+        case .array(let values):
+            return values.map(\.firestoreValue)
+        case .object(let values):
+            return values.mapValues(\.firestoreValue)
+        case .null:
+            return NSNull()
+        }
+    }
+}
+
+private struct DateValue: Codable {
+    let timeIntervalSince1970: TimeInterval
+}
+
 
 public enum EncryptedFieldsError: LocalizedError {
     case unsupportedField(String)
