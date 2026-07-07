@@ -10,22 +10,7 @@ import CryptoKit
 import FirebaseFirestore
 import Foundation
 import SecureCodable
-
-public struct EncryptedFirestoreDocument: Codable {
-    public let encryptedValue: String
-    public let createdAt: Date
-    public let updatedAt: Date
-
-    public init(
-        encryptedValue: String,
-        createdAt: Date = Date(),
-        updatedAt: Date = Date()
-    ) {
-        self.encryptedValue = encryptedValue
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-    }
-}
+import Security
 
 public final class FirestoreService {
 
@@ -665,6 +650,13 @@ public extension FirestoreService {
 
     func encryptedFieldValue<T: Encodable>(
         _ value: T,
+        using key: SymmetricKey
+    ) throws -> String {
+        try value.encrypted(using: key)
+    }
+
+    func encryptedFieldValue<T: Encodable>(
+        _ value: T,
         passphrase: String,
         userID: String? = nil
     ) async throws -> String {
@@ -895,112 +887,7 @@ public extension FirestoreService {
     }
 }
 
-
-
-
-
-public extension FirestoreService {
-    /// Save a new document where every top-level stored property is encrypted separately.
-    func saveEncryptedFields<T: Encodable>(
-        _ object: T,
-        collection: String,
-        documentID: String,
-        using key: SymmetricKey,
-        merge: Bool = false
-    ) async throws {
-        let fields = try encryptedFieldDictionary(from: object, using: key)
-
-        try await Firestore.firestore()
-            .collection(collection)
-            .document(documentID)
-            .setData(fields, merge: merge)
-    }
-
-    /// Save a new document where every top-level stored property is encrypted separately.
-    func saveEncryptedFields<T: Encodable>(
-        _ object: T,
-        collection: String,
-        documentID: String,
-        passphrase: String,
-        userID: String? = nil,
-        merge: Bool = false
-    ) async throws {
-        let key = try await FirebaseEncryptionService.shared.dataKey(
-            passphrase: passphrase,
-            userID: userID
-        )
-
-        try await saveEncryptedFields(
-            object,
-            collection: collection,
-            documentID: documentID,
-            using: key,
-            merge: merge
-        )
-    }
-
-    /// Save an Identifiable document where every top-level stored property is encrypted separately.
-    func saveEncryptedFields<T: Encodable & Identifiable>(
-        _ object: T,
-        collection: String,
-        using key: SymmetricKey,
-        merge: Bool = false
-    ) async throws where T.ID == String {
-        try await saveEncryptedFields(
-            object,
-            collection: collection,
-            documentID: object.id,
-            using: key,
-            merge: merge
-        )
-    }
-
-    /// Save an Identifiable document where every top-level stored property is encrypted separately.
-    func saveEncryptedFields<T: Encodable & Identifiable>(
-        _ object: T,
-        collection: String,
-        passphrase: String,
-        userID: String? = nil,
-        merge: Bool = false
-    ) async throws where T.ID == String {
-        let key = try await FirebaseEncryptionService.shared.dataKey(
-            passphrase: passphrase,
-            userID: userID
-        )
-
-        try await saveEncryptedFields(
-            object,
-            collection: collection,
-            documentID: object.id,
-            using: key,
-            merge: merge
-        )
-    }
-
-    private func encryptedFieldDictionary<T: Encodable>(
-        from object: T,
-        using key: SymmetricKey
-    ) throws -> [String: Any] {
-        var fields: [String: Any] = [:]
-
-        for child in Mirror(reflecting: object).allStoredChildren {
-            guard let fieldName = child.label?.cleanPropertyName else {
-                continue
-            }
-
-            guard let encodableValue = child.value as? Encodable else {
-                throw EncryptedFieldsError.unsupportedField(fieldName)
-            }
-
-            fields[fieldName] = try SecureCodable.shared.encrypt(
-                AnyEncodable(encodableValue),
-                using: key
-            )
-        }
-
-        return fields
-    }
-}
+// MARK: - Partial Field Encryption
 
 public extension FirestoreService {
     /// Save a document with public fields and selected encrypted fields.
@@ -1167,6 +1054,131 @@ public extension FirestoreService {
     }
 }
 
+// MARK: - Per-Field Encryption
+
+public extension FirestoreService {
+    /// Save a new document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws {
+        let fields = try encryptedFieldDictionary(from: object, using: key)
+
+        try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .setData(fields, merge: merge)
+    }
+
+    /// Save a new document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        passphrase: String,
+        userID: String? = nil,
+        merge: Bool = false
+    ) async throws {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncryptedFields(
+            object,
+            collection: collection,
+            documentID: documentID,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Save an Identifiable document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        try await saveEncryptedFields(
+            object,
+            collection: collection,
+            documentID: object.id,
+            using: key,
+            merge: merge
+        )
+    }
+
+    /// Save an Identifiable document where every top-level stored property is encrypted separately.
+    func saveEncryptedFields<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        passphrase: String,
+        userID: String? = nil,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        try await saveEncryptedFields(
+            object,
+            collection: collection,
+            documentID: object.id,
+            using: key,
+            merge: merge
+        )
+    }
+
+    private func encryptedFieldDictionary<T: Encodable>(
+        from object: T,
+        using key: SymmetricKey
+    ) throws -> [String: Any] {
+        var fields: [String: Any] = [:]
+
+        for child in Mirror(reflecting: object).allStoredChildren {
+            guard let fieldName = child.label?.cleanPropertyName else {
+                continue
+            }
+
+            guard let encodableValue = child.value as? Encodable else {
+                throw EncryptedFieldsError.unsupportedField(fieldName)
+            }
+
+            fields[fieldName] = try SecureCodable.shared.encrypt(
+                AnyEncodable(encodableValue),
+                using: key
+            )
+        }
+
+        return fields
+    }
+}
+
+// MARK: - Supporting Types (Public)
+
+public struct EncryptedFirestoreDocument: Codable {
+    public let encryptedValue: String
+    public let createdAt: Date
+    public let updatedAt: Date
+
+    public init(
+        encryptedValue: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.encryptedValue = encryptedValue
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+// MARK: - Supporting Types (Private)
+
 private enum FirestoreEncryptedJSONValue: Codable {
     case string(String)
     case int(Int)
@@ -1276,7 +1288,6 @@ private struct DateValue: Codable {
     let timeIntervalSince1970: TimeInterval
 }
 
-
 public enum EncryptedFieldsError: LocalizedError {
     case unsupportedField(String)
 
@@ -1319,3 +1330,302 @@ private extension String {
         hasPrefix("_") ? String(dropFirst()) : self
     }
 }
+
+
+public final class SharedKeyService {
+    
+    public static let shared = SharedKeyService()
+    
+    private let firestore: Firestore
+    private let keychain: KeychainStore
+    
+    public init(
+        firestore: Firestore = Firestore.firestore(),
+        keychain: KeychainStore = .shared
+    ) {
+        self.firestore = firestore
+        self.keychain = keychain
+    }
+    
+    // MARK: - Identity Keys
+    
+    @discardableResult
+    public func ensureIdentityKey(userID: String) throws -> Curve25519.KeyAgreement.PrivateKey {
+        if let existing = try keychain.loadPrivateKey(userID: userID) {
+            return existing
+        }
+        
+        let privateKey = Curve25519.KeyAgreement.PrivateKey()
+        try keychain.savePrivateKey(privateKey, userID: userID)
+        try publishPublicKey(privateKey.publicKey, userID: userID)
+        
+        return privateKey
+    }
+    
+    private func publishPublicKey(
+        _ publicKey: Curve25519.KeyAgreement.PublicKey,
+        userID: String
+    ) throws {
+        firestore.collection("users").document(userID).setData([
+            "publicKey": publicKey.rawRepresentation.base64EncodedString(),
+            "updatedAt": FieldValue.serverTimestamp()
+        ], merge: true)
+    }
+    
+    public func fetchPublicKey(userID: String) async throws -> Curve25519.KeyAgreement.PublicKey {
+        let snapshot = try await firestore.collection("users").document(userID).getDocument()
+        
+        guard
+            let base64 = snapshot.data()?["publicKey"] as? String,
+            let data = Data(base64Encoded: base64)
+        else {
+            throw SharedKeyError.missingPublicKey(userID)
+        }
+        
+        return try Curve25519.KeyAgreement.PublicKey(rawRepresentation: data)
+    }
+    
+    // MARK: - Resource Key Creation
+    
+    @discardableResult
+    public func createAndShareKey(
+        resourceID: String,
+        userIDs: [String],
+        senderUserID: String
+    ) async throws -> SymmetricKey {
+        let key = SymmetricKey(size: .bits256)
+        
+        try await shareKey(
+            key,
+            resourceID: resourceID,
+            userIDs: userIDs,
+            senderUserID: senderUserID
+        )
+        
+        return key
+    }
+    
+    public func shareKey(
+        _ key: SymmetricKey,
+        resourceID: String,
+        userIDs: [String],
+        senderUserID: String
+    ) async throws {
+        
+        let senderPrivateKey = try ensureIdentityKey(userID: senderUserID)
+        let senderPublicKeyBase64 = senderPrivateKey.publicKey.rawRepresentation.base64EncodedString()
+        
+        for userID in userIDs {
+            let recipientPublicKey = try await fetchPublicKey(userID: userID)
+            
+            let wrapped = try wrap(
+                key: key,
+                recipientPublicKey: recipientPublicKey,
+                senderPrivateKey: senderPrivateKey
+            )
+            
+            try await firestore
+                .collection("resources").document(resourceID)
+                .collection("accessKeys").document(userID)
+                .setData([
+                    "wrappedKey": wrapped.ciphertext,
+                    "salt": wrapped.salt,
+                    "senderPublicKey": senderPublicKeyBase64,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ])
+        }
+    }
+    
+    public func fetchKey(
+        resourceID: String,
+        userID: String
+    ) async throws -> SymmetricKey {
+        
+        let doc = try await firestore
+            .collection("resources").document(resourceID)
+            .collection("accessKeys").document(userID)
+            .getDocument()
+        
+        guard
+            let data = doc.data(),
+            let wrapped = data["wrappedKey"] as? String,
+            let salt = data["salt"] as? String,
+            let senderPublicKeyBase64 = data["senderPublicKey"] as? String,
+            let senderPublicKeyData = Data(base64Encoded: senderPublicKeyBase64)
+        else {
+            throw SharedKeyError.missingWrappedKey(resourceID: resourceID, userID: userID)
+        }
+        
+        let privateKey = try ensureIdentityKey(userID: userID)
+        let senderPublicKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: senderPublicKeyData)
+        
+        return try unwrap(
+            ciphertext: wrapped,
+            salt: salt,
+            senderPublicKey: senderPublicKey,
+            recipientPrivateKey: privateKey
+        )
+    }
+    
+    @discardableResult
+    public func rotateKey(
+        resourceID: String,
+        remainingUserIDs: [String],
+        senderUserID: String
+    ) async throws -> SymmetricKey {
+        
+        try await createAndShareKey(
+            resourceID: resourceID,
+            userIDs: remainingUserIDs,
+            senderUserID: senderUserID
+        )
+    }
+    
+    // MARK: - Crypto (unchanged)
+    
+    private struct WrappedKey {
+        let ciphertext: String
+        let salt: String
+    }
+    
+    private func wrap(
+        key: SymmetricKey,
+        recipientPublicKey: Curve25519.KeyAgreement.PublicKey,
+        senderPrivateKey: Curve25519.KeyAgreement.PrivateKey
+    ) throws -> WrappedKey {
+        
+        let sharedSecret = try senderPrivateKey.sharedSecretFromKeyAgreement(with: recipientPublicKey)
+        let salt = try SecureCodable.randomData(byteCount: 32)
+        
+        let wrappingKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: salt,
+            sharedInfo: Data("shared-key-wrap-v1".utf8),
+            outputByteCount: 32
+        )
+        
+        let keyData = key.withUnsafeBytes { Data($0) }
+        let sealedBox = try AES.GCM.seal(keyData, using: wrappingKey)
+        
+        return WrappedKey(
+            ciphertext: sealedBox.combined!.base64EncodedString(),
+            salt: salt.base64EncodedString()
+        )
+    }
+    
+    private func unwrap(
+        ciphertext: String,
+        salt: String,
+        senderPublicKey: Curve25519.KeyAgreement.PublicKey,
+        recipientPrivateKey: Curve25519.KeyAgreement.PrivateKey
+    ) throws -> SymmetricKey {
+        
+        let ciphertextData = Data(base64Encoded: ciphertext)!
+        let saltData = Data(base64Encoded: salt)!
+        
+        let sharedSecret = try recipientPrivateKey.sharedSecretFromKeyAgreement(with: senderPublicKey)
+        
+        let wrappingKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: saltData,
+            sharedInfo: Data("shared-key-wrap-v1".utf8),
+            outputByteCount: 32
+        )
+        
+        let sealedBox = try AES.GCM.SealedBox(combined: ciphertextData)
+        let keyData = try AES.GCM.open(sealedBox, using: wrappingKey)
+        
+        return SymmetricKey(data: keyData)
+    }
+    
+}
+
+public final class KeychainStore {
+    public static let shared = KeychainStore()
+    
+    private let service = "com.yourapp.sharedkeys"
+    
+    public init() {}
+    
+    public func savePrivateKey(_ key: Curve25519.KeyAgreement.PrivateKey, userID: String) throws {
+        let data = key.rawRepresentation
+        
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: userID
+        ]
+        
+        // Remove existing entry first
+        SecItemDelete(query as CFDictionary)
+        
+        var attributes = query
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+        
+        guard status == errSecSuccess else {
+            throw KeychainStoreError.saveFailed(status: status)
+        }
+    }
+    
+    public func loadPrivateKey(userID: String) throws -> Curve25519.KeyAgreement.PrivateKey? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: userID,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        if status == errSecItemNotFound {
+            return nil
+        }
+        
+        guard status == errSecSuccess, let data = result as? Data else {
+            throw KeychainStoreError.loadFailed(status: status)
+        }
+        
+        return try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data)
+    }
+    
+}
+
+public enum KeychainStoreError: LocalizedError {
+    case saveFailed(status: OSStatus)
+    case loadFailed(status: OSStatus)
+    
+    public var errorDescription: String? {
+        switch self {
+        case .saveFailed(let status):
+            return "Failed to save key (OSStatus: \(status))"
+        case .loadFailed(let status):
+            return "Failed to load key (OSStatus: \(status))"
+        }
+    }
+}
+
+public enum SharedKeyError: LocalizedError {
+    case missingPublicKey(String)
+    case missingWrappedKey(resourceID: String, userID: String)
+    case invalidWrappedKeyData
+    case sealFailed
+    
+    public var errorDescription: String? {
+        switch self {
+        case .missingPublicKey(let userID):
+            return "No public key found for user \(userID). Call ensureIdentityKey first."
+        case .missingWrappedKey(let resourceID, let userID):
+            return "No wrapped key found for user \(userID) in resource \(resourceID)."
+        case .invalidWrappedKeyData:
+            return "Wrapped key data is invalid or corrupted."
+        case .sealFailed:
+            return "Failed to encrypt (seal) the key."
+        }
+    }
+}
+
