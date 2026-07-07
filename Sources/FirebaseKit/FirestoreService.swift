@@ -538,6 +538,34 @@ public extension FirestoreService {
             using: key
         )
     }
+    
+    func savePartiallyEncryptedToSubcollection<T: Encodable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        subdocumentID: String,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws {
+
+        var data = try Firestore.Encoder().encode(object)
+
+        for field in encryptedFields {
+            guard let value = data[field] else { continue }
+
+            let encryptableValue = try FirestoreEncryptedJSONValue(firestoreValue: value)
+            data[field] = try encryptableValue.encrypted(using: key)
+        }
+
+        try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .collection(subcollection)
+            .document(subdocumentID)
+            .setData(data, merge: merge)
+    }
 
     /// Encrypt and save a Codable document using its String id.
     func saveEncrypted<T: Encodable & Identifiable>(
