@@ -330,6 +330,32 @@ public extension FirestoreService {
             using: key
         )
     }
+    
+    /// Fetch raw data from a subcollection document.
+    func fetchRawFromSubcollection(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        subdocumentID: String
+    ) async throws -> [String: Any] {
+        
+        let snapshot = try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .collection(subcollection)
+            .document(subdocumentID)
+            .getDocument()
+        
+        guard let data = snapshot.data() else {
+            throw NSError(
+                domain: "FirestoreService",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Document does not exist"]
+            )
+        }
+        
+        return data
+    }
 
     /// Fetch and decrypt all Codable documents in a collection saved with saveEncrypted.
     func fetchAllEncrypted<T: Decodable>(
@@ -606,38 +632,6 @@ public extension FirestoreService {
             documentID: documentID,
             using: key
         )
-    }
-    
-    func savePartiallyEncryptedToSubcollection<T: Encodable & Identifiable>(
-        _ object: T,
-        collection: String,
-        documentID: String,
-        subcollection: String,
-        encryptedFields: Set<String>,
-        using key: SymmetricKey,
-        merge: Bool = false
-    ) async throws where T.ID == String {
-        var data = try Firestore.Encoder().encode(object)
-        
-        for field in encryptedFields {
-            guard let value = data.value(at: field) else { continue }
-
-            do {
-                let encryptableValue = try FirestoreEncryptedJSONValue(firestoreValue: value)
-                let encrypted = try encryptableValue.encrypted(using: key)
-                
-                data.setValue(encrypted, at: field)
-            } catch {
-                print("[PRINT][ERROR] Failed to encrypt field '\(field)': \(error)")
-            }
-        }
-        
-        try await Firestore.firestore()
-            .collection(collection)
-            .document(documentID)
-            .collection(subcollection)
-            .document(object.id)
-            .setData(data, merge: merge)
     }
 }
 
@@ -1023,6 +1017,65 @@ public extension FirestoreService {
             merge: merge
         )
     }
+    
+    func savePartiallyEncryptedToSubcollection<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        var data = try Firestore.Encoder().encode(object)
+        
+        for field in encryptedFields {
+            guard let value = data.value(at: field) else { continue }
+
+            do {
+                let encryptableValue = try FirestoreEncryptedJSONValue(firestoreValue: value)
+                let encrypted = try encryptableValue.encrypted(using: key)
+                
+                data.setValue(encrypted, at: field)
+            } catch {
+                print("[PRINT][ERROR] Failed to encrypt field '\(field)': \(error)")
+            }
+        }
+        
+        try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .collection(subcollection)
+            .document(object.id)
+            .setData(data, merge: merge)
+    }
+    
+    func savePartiallyEncryptedToSubcollection<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        encryptedFields: Set<String>,
+        passphrase: String,
+        userID: String,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+        
+        try await savePartiallyEncryptedToSubcollection(
+            object,
+            collection: collection,
+            documentID: documentID,
+            subcollection: subcollection,
+            encryptedFields: encryptedFields,
+            using: key,
+            merge: merge
+        )
+    }
 
     /// Fetch a document with public fields and selected encrypted fields.
     ///
@@ -1079,6 +1132,70 @@ public extension FirestoreService {
         return try await fetchPartiallyEncrypted(
             collection: collection,
             documentID: documentID,
+            as: type,
+            encryptedFields: encryptedFields,
+            using: key
+        )
+    }
+    
+    func fetchPartiallyEncryptedFromSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        subdocumentID: String,
+        as type: T.Type,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey
+    ) async throws -> T {
+        
+        var data = try await fetchRawFromSubcollection(
+            collection: collection,
+            documentID: documentID,
+            subcollection: subcollection,
+            subdocumentID: subdocumentID
+        )
+
+        for field in encryptedFields {
+            guard let encryptedValue = data.value(at: field) as? String else {
+                continue
+            }
+
+            do {
+                let decryptedValue = try encryptedValue.decrypted(
+                    as: FirestoreEncryptedJSONValue.self,
+                    using: key
+                )
+
+                data.setValue(decryptedValue.firestoreValue, at: field)
+            } catch {
+                print("[PRINT][ERROR] Failed to decrypt field '\(field)': \(error)")
+            }
+        }
+
+        return try Firestore.Decoder().decode(type, from: data)
+    }
+    
+    func fetchPartiallyEncryptedFromSubcollection<T: Decodable>(
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        subdocumentID: String,
+        as type: T.Type,
+        encryptedFields: Set<String>,
+        passphrase: String,
+        userID: String? = nil
+    ) async throws -> T {
+        
+        let key = try await FirebaseEncryptionService.shared.dataKey(
+            passphrase: passphrase,
+            userID: userID
+        )
+
+        return try await fetchPartiallyEncryptedFromSubcollection(
+            collection: collection,
+            documentID: documentID,
+            subcollection: subcollection,
+            subdocumentID: subdocumentID,
             as: type,
             encryptedFields: encryptedFields,
             using: key
