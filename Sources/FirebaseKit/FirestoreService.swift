@@ -64,6 +64,18 @@ public extension FirestoreService {
         let snapshot = try await database.collection(collection).limit(to: limit).getDocuments()
         return snapshot.documents.compactMap { try? $0.data(as: T.self) }
     }
+    
+    func fetchAllRaw(collection: String) async throws -> [[String: Any]] {
+        let snapshot = try await Firestore.firestore()
+            .collection(collection)
+            .getDocuments()
+        
+        return snapshot.documents.map { doc in
+            var data = doc.data()
+            data["id"] = doc.documentID // important for decoding later
+            return data
+        }
+    }
 
     func fetchField<T>(
         collection: String,
@@ -518,6 +530,45 @@ public extension FirestoreService {
             as: type,
             using: key
         )
+    }
+    
+    func fetchAllWithKeys<T: Decodable>(
+        collection: String,
+        as type: T.Type,
+        encryptedFields: Set<String>,
+        userID: String,
+        keyProvider: @escaping (_ documentID: String) async throws -> SymmetricKey
+    ) async throws -> [T] {
+        
+        let rawDocuments = try await fetchAllRaw(collection: collection)
+        var results: [T] = []
+        
+        for raw in rawDocuments {
+            guard let documentID = raw["id"] as? String else { continue }
+            
+            var data = raw
+            
+            // 1. Get key for THIS document
+            let key = try await keyProvider(documentID)
+            
+            // 2. Decrypt fields
+            for field in encryptedFields {
+                guard let encryptedValue = data[field] as? String else { continue }
+                
+                let decryptedValue = try encryptedValue.decrypted(
+                    as: FirestoreEncryptedJSONValue.self,
+                    using: key
+                )
+                
+                data[field] = decryptedValue.firestoreValue
+            }
+            
+            // 3. Decode
+            let decoded = try Firestore.Decoder().decode(type, from: data)
+            results.append(decoded)
+        }
+        
+        return results
     }
 }
 
