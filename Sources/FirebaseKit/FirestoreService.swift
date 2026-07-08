@@ -538,34 +538,6 @@ public extension FirestoreService {
             using: key
         )
     }
-    
-    func savePartiallyEncryptedToSubcollection<T: Encodable>(
-        _ object: T,
-        collection: String,
-        documentID: String,
-        subcollection: String,
-        subdocumentID: String,
-        encryptedFields: Set<String>,
-        using key: SymmetricKey,
-        merge: Bool = false
-    ) async throws {
-
-        var data = try Firestore.Encoder().encode(object)
-
-        for field in encryptedFields {
-            guard let value = data[field] else { continue }
-
-            let encryptableValue = try FirestoreEncryptedJSONValue(firestoreValue: value)
-            data[field] = try encryptableValue.encrypted(using: key)
-        }
-
-        try await Firestore.firestore()
-            .collection(collection)
-            .document(documentID)
-            .collection(subcollection)
-            .document(subdocumentID)
-            .setData(data, merge: merge)
-    }
 
     /// Encrypt and save a Codable document using its String id.
     func saveEncrypted<T: Encodable & Identifiable>(
@@ -634,6 +606,38 @@ public extension FirestoreService {
             documentID: documentID,
             using: key
         )
+    }
+    
+    func savePartiallyEncryptedToSubcollection<T: Encodable & Identifiable>(
+        _ object: T,
+        collection: String,
+        documentID: String,
+        subcollection: String,
+        encryptedFields: Set<String>,
+        using key: SymmetricKey,
+        merge: Bool = false
+    ) async throws where T.ID == String {
+        var data = try Firestore.Encoder().encode(object)
+        
+        for field in encryptedFields {
+            guard let value = data.value(at: field) else { continue }
+
+            do {
+                let encryptableValue = try FirestoreEncryptedJSONValue(firestoreValue: value)
+                let encrypted = try encryptableValue.encrypted(using: key)
+                
+                data.setValue(encrypted, at: field)
+            } catch {
+                print("[PRINT][ERROR] Failed to encrypt field '\(field)': \(error)")
+            }
+        }
+        
+        try await Firestore.firestore()
+            .collection(collection)
+            .document(documentID)
+            .collection(subcollection)
+            .document(object.id)
+            .setData(data, merge: merge)
     }
 }
 
@@ -1356,6 +1360,45 @@ private extension Mirror {
 private extension String {
     var cleanPropertyName: String {
         hasPrefix("_") ? String(dropFirst()) : self
+    }
+}
+
+private extension Dictionary where Key == String, Value == Any {
+    
+    func value(at path: String) -> Any? {
+        let keys = path.split(separator: ".").map(String.init)
+        var current: Any? = self
+        
+        for key in keys {
+            guard let dict = current as? [String: Any] else { return nil }
+            current = dict[key]
+        }
+        
+        return current
+    }
+    
+    mutating func setValue(_ value: Any, at path: String) {
+        self = Self._set(self, keys: path.split(separator: ".").map(String.init), value: value)
+    }
+    
+    private static func _set(
+        _ dict: [String: Any],
+        keys: [String],
+        value: Any
+    ) -> [String: Any] {
+        var dict = dict
+        
+        guard let first = keys.first else { return dict }
+        
+        if keys.count == 1 {
+            dict[first] = value
+            return dict
+        }
+        
+        let nested = dict[first] as? [String: Any] ?? [:]
+        dict[first] = _set(nested, keys: Array(keys.dropFirst()), value: value)
+        
+        return dict
     }
 }
 
